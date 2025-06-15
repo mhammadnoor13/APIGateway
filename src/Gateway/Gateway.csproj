@@ -6,12 +6,16 @@
     <ImplicitUsings>enable</ImplicitUsings>
 	<PreserveCompilationContext>true</PreserveCompilationContext>
 	<GenerateRuntimeConfigurationFiles>true</GenerateRuntimeConfigurationFiles>
+	<UserSecretsId>db42dfcb-a9fa-4551-80de-257344c835d4</UserSecretsId>
+	<DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
+	<DockerfileContext>..\..</DockerfileContext>
 
 
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.17" />
+    <PackageReference Include="Microsoft.VisualStudio.Azure.Containers.Tools.Targets" Version="1.21.0" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="9.0.1" />
     <PackageReference Include="Yarp.ReverseProxy" Version="2.3.0" />
   </ItemGroup>
