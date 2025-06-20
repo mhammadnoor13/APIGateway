@@ -1,5 +1,6 @@
 ﻿// using Microsoft.AspNetCore.Authentication.JwtBearer;   // ← auth removed
 
+using Contracts.Contracts;
 using Gateway.Services;
 using MassTransit;
 
@@ -18,6 +19,8 @@ builder.Services.AddCors(options =>
 // ── MassTransit / RabbitMQ ───────────────────────────────────────────────────
 builder.Services.AddMassTransit(x =>
 {
+    x.SetRabbitMqReplyToRequestClientFactory();
+
     x.UsingRabbitMq((context, cfg) =>
     {
         cfg.Host(builder.Configuration["RabbitMq:Host"], h =>
@@ -26,12 +29,15 @@ builder.Services.AddMassTransit(x =>
             h.Password(builder.Configuration["RabbitMq:Password"]);
         });
     });
+
+    x.AddRequestClient<CreateUserCommand>(TimeSpan.FromSeconds(20));
+    x.AddRequestClient<CreateConsultantProfileCommand>(TimeSpan.FromSeconds(20));
 });
 
 
 
 // Dependency Injection
-builder.Services.AddScoped<IRegistrationPublisher, RegistrationPublisher>();
+builder.Services.AddScoped<IUserRegistrationService, UserRegistrationService>();
 
 
 // ── (optional) MVC controllers you might still have ─────────────────────────

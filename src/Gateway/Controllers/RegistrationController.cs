@@ -8,17 +8,31 @@ namespace Gateway.Controllers;
 [Route("api/[controller]")]
 public class RegistrationController : ControllerBase
 {
-    private readonly IRegistrationPublisher _registrationPublisher;
+    private readonly IUserRegistrationService _registrationService;
 
-    public RegistrationController(IRegistrationPublisher registrationPublisher)
+    public RegistrationController(IUserRegistrationService registrationService)
     {
-        _registrationPublisher = registrationPublisher;       
+        _registrationService = registrationService;       
     }
 
     [HttpPost]
     public async Task<IActionResult> RegisterUser([FromBody] RegisterRequest request)
     {
-        await _registrationPublisher.PublishAsync(request);
-        return Ok("Pubished");
+        if (!ModelState.IsValid)
+            return BadRequest(ModelState);
+
+        try
+        {
+            var userId = await _registrationService.RegisterAsync(request);
+            return CreatedAtRoute(
+                routeName: "GetUser",
+                routeValues: new { userId },
+                value: null);
+        }
+        catch (InvalidOperationException ex)
+        {
+
+            return StatusCode(502, new { error = ex.Message });
+        }
     }
 }
