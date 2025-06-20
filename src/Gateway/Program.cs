@@ -1,16 +1,38 @@
 ﻿// using Microsoft.AspNetCore.Authentication.JwtBearer;   // ← auth removed
 
+using Gateway.Services;
+using MassTransit;
+
 var builder = WebApplication.CreateBuilder(args);
 
 // ── CORS for local React dev ────────────────────────────────────────────────
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowReactDev", policy =>
-        policy.WithOrigins("http://localhost:5173")
+        policy.WithOrigins("http://localhost:3000")
               .AllowAnyMethod()
               .AllowAnyHeader()
               .AllowCredentials());
 });
+
+// ── MassTransit / RabbitMQ ───────────────────────────────────────────────────
+builder.Services.AddMassTransit(x =>
+{
+    x.UsingRabbitMq((context, cfg) =>
+    {
+        cfg.Host(builder.Configuration["RabbitMq:Host"], h =>
+        {
+            h.Username(builder.Configuration["RabbitMq:Username"]);
+            h.Password(builder.Configuration["RabbitMq:Password"]);
+        });
+    });
+});
+
+
+
+// Dependency Injection
+builder.Services.AddScoped<IRegistrationPublisher, RegistrationPublisher>();
+
 
 // ── (optional) MVC controllers you might still have ─────────────────────────
 builder.Services.AddControllers();
@@ -60,7 +82,7 @@ app.UseCors("AllowReactDev");
 // app.UseAuthentication();   // ← commented out
 // app.UseAuthorization();    // ← commented out
 
-app.MapReverseProxy();
 app.MapControllers();
+app.MapReverseProxy();
 
 app.Run();
