@@ -40,6 +40,7 @@ namespace Gateway.Services
 
             }
 
+
             var cons_cmd = new CreateConsultantProfileCommand(
                     userId,
                     req.FirstName,

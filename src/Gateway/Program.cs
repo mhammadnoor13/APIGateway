@@ -19,7 +19,9 @@ builder.Services.AddCors(options =>
 // ── MassTransit / RabbitMQ ───────────────────────────────────────────────────
 builder.Services.AddMassTransit(x =>
 {
-    x.SetRabbitMqReplyToRequestClientFactory();
+    x.SetKebabCaseEndpointNameFormatter();
+    x.AddRequestClient<CreateUserCommand>(TimeSpan.FromSeconds(20));
+    x.AddRequestClient<CreateConsultantProfileCommand>(TimeSpan.FromSeconds(20));
 
     x.UsingRabbitMq((context, cfg) =>
     {
@@ -28,10 +30,11 @@ builder.Services.AddMassTransit(x =>
             h.Username(builder.Configuration["RabbitMq:Username"]);
             h.Password(builder.Configuration["RabbitMq:Password"]);
         });
+
+
+        cfg.ConfigureEndpoints(context);
     });
 
-    x.AddRequestClient<CreateUserCommand>(TimeSpan.FromSeconds(20));
-    x.AddRequestClient<CreateConsultantProfileCommand>(TimeSpan.FromSeconds(20));
 });
 
 
@@ -87,6 +90,7 @@ app.UseCors("AllowReactDev");
 
 // app.UseAuthentication();   // ← commented out
 // app.UseAuthorization();    // ← commented out
+app.UseHttpsRedirection();
 
 app.MapControllers();
 app.MapReverseProxy();
