@@ -1,7 +1,7 @@
-﻿using Contracts.Contracts;
-using Contracts.Responses;
-using Gateway.Models;
+﻿using Gateway.Models;
 using MassTransit;
+using Contracts.Shared.Commands;
+using Contracts.Shared.Responses;
 
 namespace Gateway.Services
 {
@@ -46,6 +46,7 @@ namespace Gateway.Services
                     req.FirstName,
                     req.LastName,
                     req.Specialty,
+                    req.Email,
                     req.Age);
 
             try
@@ -64,7 +65,8 @@ namespace Gateway.Services
 
 
 
-        
+
+
 
         }
     }

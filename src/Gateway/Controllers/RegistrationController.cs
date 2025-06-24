@@ -18,16 +18,26 @@ public class RegistrationController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> RegisterUser([FromBody] RegisterRequest request)
     {
+
         if (!ModelState.IsValid)
             return BadRequest(ModelState);
 
         try
         {
             var userId = await _registrationService.RegisterAsync(request);
-            return CreatedAtRoute(
-                routeName: "GetUser",
-                routeValues: new { userId },
-                value: null);
+            Console.WriteLine(
+                "\n\n\n" +
+                $"--------------  Generated with Id = {userId}  --------------------------------" +
+                "\n\n\n"
+            );
+
+            Console.WriteLine(
+    "\n\n\n" +
+    $"--------------  Generated with Id = {userId}  --------------------------------" +
+    "\n\n\n"
+);
+            return Ok(userId);
+
         }
         catch (InvalidOperationException ex)
         {

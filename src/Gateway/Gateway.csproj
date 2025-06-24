@@ -21,9 +21,9 @@
     <PackageReference Include="Swashbuckle.AspNetCore" Version="9.0.1" />
     <PackageReference Include="Yarp.ReverseProxy" Version="2.3.0" />
   </ItemGroup>
-
-  <ItemGroup>
-    <ProjectReference Include="..\..\Contracts\Contracts.csproj" />
-  </ItemGroup>
+	
+    <ItemGroup>
+	    <ProjectReference Include="..\..\..\Common\Contracts\Contracts.Shared\Contracts.Shared.csproj" />
+    </ItemGroup>
 
 </Project>
