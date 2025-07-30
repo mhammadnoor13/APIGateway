@@ -1,101 +1,134 @@
-﻿// using Microsoft.AspNetCore.Authentication.JwtBearer;   // ← auth removed
-
-using Contracts.Shared.Commands;
-using Gateway.Services;
-using MassTransit;
+﻿using Gateway.Clients;
+using Gateway.Models;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.OpenApi.Models;
 
 var builder = WebApplication.CreateBuilder(args);
+var env = builder.Environment;
 
-// ── CORS for local React dev ────────────────────────────────────────────────
-builder.Services.AddCors(options =>
-{
-    options.AddPolicy("AllowReactDev", policy =>
-        policy.WithOrigins("http://localhost:3000")
-              .AllowAnyMethod()
-              .AllowAnyHeader()
-              .AllowCredentials());
-});
+string authBaseUrl;
 
-// ── MassTransit / RabbitMQ ───────────────────────────────────────────────────
-builder.Services.AddMassTransit(x =>
-{
-    x.SetKebabCaseEndpointNameFormatter();
-    x.AddRequestClient<CreateUserCommand>(TimeSpan.FromSeconds(20));
-    x.AddRequestClient<CreateConsultantProfileCommand>(TimeSpan.FromSeconds(20));
+    authBaseUrl = builder.Configuration
+  .GetSection("ReverseProxy:Clusters:authCluster:Destinations")
+  .GetChildren()
+  .Select(d => d.GetValue<string>("Address"))
+  .FirstOrDefault(addr => !string.IsNullOrEmpty(addr))
+  ?? throw new InvalidOperationException(
+      "No destination configured for authCluster");
 
-    x.UsingRabbitMq((context, cfg) =>
+
+
+builder.Services
+    .AddHttpClient<IAuthServiceClient, AuthServiceClient>(c =>
     {
-        cfg.Host(builder.Configuration["MessageBroker:Host"], h =>
-        {
-            h.Username(builder.Configuration["MessageBroker:Username"]);
-            h.Password(builder.Configuration["MessageBroker:Password"]);
-        });
-
-
-        cfg.ConfigureEndpoints(context);
+        c.BaseAddress = new Uri(authBaseUrl);
+        c.Timeout = TimeSpan.FromSeconds(10);
     });
 
-});
-
-
-
-// Dependency Injection
-builder.Services.AddScoped<IUserRegistrationService, UserRegistrationService>();
-builder.Services.AddHealthChecks();
-
-
-// ── (optional) MVC controllers you might still have ─────────────────────────
+// 2️⃣ Add controllers and YARP reverse proxy
 builder.Services.AddControllers();
-
-// ── Swagger (dev only) ──────────────────────────────────────────────────────
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
-
-///////////////////////////////////////////////////////////////////////////////
-//  Authentication & Authorization  ❌  (commented out for now)               //
-///////////////////////////////////////////////////////////////////////////////
-
-// builder.Services
-//     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-//     .AddJwtBearer(options =>
-//     {
-//         options.Authority = builder.Configuration["Jwt:Authority"];
-//         options.Audience  = builder.Configuration["Jwt:Audience"];
-//         options.RequireHttpsMetadata = true;
-//     });
-
-// builder.Services.AddAuthorization(options =>
-// {
-//     options.AddPolicy("CasePolicy", policy =>
-//         policy.RequireClaim("scope", "case.read", "case.write"));
-//     options.AddPolicy("ConsultantPolicy", policy =>
-//         policy.RequireClaim("scope", "consultant.read", "consultant.write"));
-// });
-
-///////////////////////////////////////////////////////////////////////////////
-
 builder.Services
     .AddReverseProxy()
     .LoadFromConfig(builder.Configuration.GetSection("ReverseProxy"));
 
+// 3️⃣ Swagger & CORS
+builder.Services.AddCors(p => p.AddDefaultPolicy(pb =>
+    pb.AllowAnyOrigin()
+      .AllowAnyMethod()
+      .AllowAnyHeader()));
+
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen(c =>
+{
+    c.SwaggerDoc("v1", new OpenApiInfo { Title = "API Gateway", Version = "v1" });
+    c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+    {
+        Name = "Authorization",
+        In = ParameterLocation.Header,
+        Type = SecuritySchemeType.ApiKey,
+        Scheme = "Bearer",
+        Description = "Enter ‘Bearer {token}’"
+    });
+    c.AddSecurityRequirement(new OpenApiSecurityRequirement {
+        {
+            new OpenApiSecurityScheme {
+                Reference = new OpenApiReference {
+                    Type = ReferenceType.SecurityScheme,
+                    Id   = "Bearer"
+                }
+            },
+            Array.Empty<string>()
+        }
+    });
+});
+
 var app = builder.Build();
 
-// ── Pipeline ────────────────────────────────────────────────────────────────
-if (app.Environment.IsDevelopment())
+// 4️⃣ Pipeline: CORS, Swagger, Health
+app.UseCors();
+app.UseSwagger();
+app.UseSwaggerUI();
+
+// 5️⃣ Public paths whitelist
+var publicPaths = new[]
 {
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
+    "/auth/login",
+    "/auth/register",
+    "/swagger",
+    "/swagger/index.html",
+    "/swagger/v1/swagger.json",
+    "/health",
+};
 
-app.UseCors("AllowReactDev");
+// 6️⃣ Global JWT‐validation middleware
+app.Use(async (ctx, next) =>
+{
+    var path = ctx.Request.Path.Value ?? "";
+    var method = ctx.Request.Method;
 
-// app.UseAuthentication();   // ← commented out
-// app.UseAuthorization();    // ← commented out
-app.UseHttpsRedirection();
+    if (method == HttpMethods.Post
+    && path.Equals("/cases", StringComparison.OrdinalIgnoreCase))
+    {
+        await next();
+        return;
+    }
 
+
+    if (publicPaths.Any(p => path.StartsWith(p, StringComparison.OrdinalIgnoreCase)))
+    {
+        await next();
+        return;
+    }
+
+    if (!ctx.Request.Headers.TryGetValue("Authorization", out var authHdr) ||
+        !authHdr.ToString().StartsWith("Bearer "))
+    {
+        ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;
+        return;
+    }
+
+    var token = authHdr.ToString()["Bearer ".Length..].Trim();
+    var client = ctx.RequestServices.GetRequiredService<IAuthServiceClient>();
+    var user = await client.ValidateTokenAsync(token);
+    if (user is null)
+    {
+        ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;
+        return;
+    }
+
+
+
+    ctx.Request.Headers["X-User-Id"] = user.UserId.ToString();
+    ctx.Request.Headers["X-User-Email"] = user.Email;
+    ctx.Request.Headers["X-User-Roles"] = string.Join(",", user.Roles);
+
+    await next();
+});
+
+// 7️⃣ Map controllers, then proxy all other routes
 app.MapControllers();
 app.MapReverseProxy();
-app.MapHealthChecks("/health");
-
 
 app.Run();

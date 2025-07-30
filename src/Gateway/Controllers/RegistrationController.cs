@@ -1,48 +1,40 @@
-﻿using Gateway.Models;
-using Gateway.Services;
+﻿using Gateway.Clients;
+using Gateway.Models;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
-namespace Gateway.Controllers;
-
-[ApiController]
-[Route("api/[controller]")]
-public class RegistrationController : ControllerBase
+namespace Gateway.Controllers
 {
-    private readonly IUserRegistrationService _registrationService;
-
-    public RegistrationController(IUserRegistrationService registrationService)
+    [ApiController]
+    [Route("auth")]
+    public class AuthController : ControllerBase
     {
-        _registrationService = registrationService;       
-    }
+        private readonly IAuthServiceClient _authClient;
 
-    [HttpPost]
-    public async Task<IActionResult> RegisterUser([FromBody] RegisterRequest request)
-    {
+        public AuthController(IAuthServiceClient authClient)
+            => _authClient = authClient;
 
-        if (!ModelState.IsValid)
-            return BadRequest(ModelState);
-
-        try
+        /// <summary>
+        /// Proxy the /auth/validate-token call to AuthService.
+        /// </summary>
+        [HttpPost("validate-token")]
+        [AllowAnonymous]
+        public async Task<IActionResult> ValidateToken()
         {
-            var userId = await _registrationService.RegisterAsync(request);
-            Console.WriteLine(
-                "\n\n\n" +
-                $"--------------  Generated with Id = {userId}  --------------------------------" +
-                "\n\n\n"
-            );
+            if (!Request.Headers.TryGetValue("Authorization", out var hdr) ||
+                string.IsNullOrWhiteSpace(hdr) ||
+                !hdr.ToString().StartsWith("Bearer "))
+            {
+                return BadRequest("Missing or malformed Authorization header.");
+            }
 
-            Console.WriteLine(
-    "\n\n\n" +
-    $"--------------  Generated with Id = {userId}  --------------------------------" +
-    "\n\n\n"
-);
-            return Ok(userId);
+            var jwt = hdr.ToString()["Bearer ".Length..].Trim();
+            var user = await _authClient.ValidateTokenAsync(jwt);
 
-        }
-        catch (InvalidOperationException ex)
-        {
+            if (user is null)
+                return Unauthorized();
 
-            return StatusCode(502, new { error = ex.Message });
+            return Ok(user);
         }
     }
 }
