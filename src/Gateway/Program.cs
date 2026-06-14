@@ -9,16 +9,19 @@ var builder = WebApplication.CreateBuilder(args);
 var env = builder.Environment;
 
 string authBaseUrl;
+var authDestinations = builder.Configuration
+    .GetSection("ReverseProxy:Clusters:authCluster:Destinations")
+    .GetChildren();
 
-    authBaseUrl = builder.Configuration
-  .GetSection("ReverseProxy:Clusters:authCluster:Destinations")
-  .GetChildren()
-  .Select(d => d.GetValue<string>("Address"))
-  .FirstOrDefault(addr => !string.IsNullOrEmpty(addr))
+
+authBaseUrl = authDestinations
+  .Select(destionation => destionation.GetValue<string>("Address"))
+  .FirstOrDefault(address => !string.IsNullOrWhiteSpace(address))
   ?? throw new InvalidOperationException(
       "No destination configured for authCluster");
 
 
+builder.Services.AddControllers();
 
 builder.Services
     .AddHttpClient<IAuthServiceClient, AuthServiceClient>(c =>
@@ -27,8 +30,7 @@ builder.Services
         c.Timeout = TimeSpan.FromSeconds(10);
     });
 
-// 2️⃣ Add controllers and YARP reverse proxy
-builder.Services.AddControllers();
+
 builder.Services
     .AddReverseProxy()
     .LoadFromConfig(builder.Configuration.GetSection("ReverseProxy"));
@@ -39,6 +41,7 @@ builder.Services.AddCors(p => p.AddDefaultPolicy(pb =>
       .AllowAnyMethod()
       .AllowAnyHeader()));
 
+// Documentation and Testing and adding a Bearer button in Swagger UI
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
